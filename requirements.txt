@@ -5,6 +5,5 @@ requests==2.31.0
 numpy==1.25.0
 pymongo==4.6.0
 bcrypt==4.0.1
-pickle==0.0.11
-
+scipy==1.9.3
 
