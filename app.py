@@ -12,13 +12,13 @@ import bcrypt
 from sklearn.ensemble import RandomForestClassifier
 
 # ---------------- MongoDB Setup ----------------
-MONGO_URI = "mongodb+srv://abidew1:Awdxsefc123@cluster0.geq8j.mongodb.net/movie_recommendation_system?retryWrites=true&w=majority"
+MONGO_URI = st.secrets["MONGO_URI"]  # Now using Streamlit's Secrets Manager
 client = MongoClient(MONGO_URI)
 db = client.get_database("movie_recommendation_system")
 users_collection = db.get_collection("users")
 
 # ---------------- TMDb API Setup ----------------
-TMDB_API_KEY = 'cfef64666ce0721f2583061b2c36c45a'
+TMDB_API_KEY = st.secrets["TMDB_API_KEY"]  # Storing TMDb API key in Secrets
 TMDB_IMG_BASE_URL = "https://image.tmdb.org/t/p/w500"
 
 def get_movie_poster(title):
