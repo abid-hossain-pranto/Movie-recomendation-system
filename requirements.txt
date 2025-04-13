@@ -1,8 +1,9 @@
-streamlit==1.21.0
-pandas==1.5.3
-scikit-learn==1.2.2
-requests==2.31.0
-numpy==1.25.0
-pymongo==4.6.0
-bcrypt==4.0.1
-pickle5==0.0.11
+streamlit
+pandas
+scikit-learn
+requests
+numpy
+pymongo
+bcrypt
+pickle
+
