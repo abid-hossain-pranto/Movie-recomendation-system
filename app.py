@@ -12,7 +12,7 @@ import bcrypt
 from sklearn.ensemble import RandomForestClassifier
 
 # ---------------- MongoDB Setup ----------------
-MONGO_URI = st.secrets["MONGO_URI"]  # Now using Streamlit's Secrets Manager
+MONGO_URI = st.secrets["MONGO"]["URI"]  # Now using Streamlit's Secrets Manager
 client = MongoClient(MONGO_URI)
 db = client.get_database("movie_recommendation_system")
 users_collection = db.get_collection("users")
