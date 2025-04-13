@@ -1,6 +1,6 @@
-streamlit==1.42.1  # or another version you prefer
+streamlit==1.42.1
 pandas==1.5.3
-numpy==1.24.3  # a stable version of numpy that avoids distutils
+numpy==1.23.5  # or higher version that is compatible with Python 3.12
 scikit-learn==1.2.2
 requests==2.31.0
 pymongo==4.6.0
