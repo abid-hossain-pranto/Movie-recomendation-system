@@ -7,21 +7,21 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.ensemble import RandomForestClassifier
 from pymongo import MongoClient
 import bcrypt
-import numpy as np
+import joblib
 from sklearn.metrics import precision_score, f1_score, accuracy_score, confusion_matrix
 import os
+import numpy as np
 
-# ------------------- Secrets Setup -------------------
+# ---------------- MongoDB Setup ----------------
 MONGO_URI = st.secrets["MONGO"]["URI"]
-TMDB_API_KEY = st.secrets["TMDB"]["TMDB_API_KEY"]
-TMDB_IMG_BASE_URL = st.secrets["TMDB"]["TMDB_IMG_BASE_URL"]
-
-# ------------------- MongoDB Setup -------------------
 client = MongoClient(MONGO_URI)
 db = client.get_database("movie_recommendation_system")
 users_collection = db.get_collection("users")
 
-# ------------------- Poster Fetch -------------------
+# ---------------- TMDb API Setup ----------------
+TMDB_API_KEY = st.secrets["TMDB"]["TMDB_API_KEY"]
+TMDB_IMG_BASE_URL = st.secrets["TMDB"]["TMDB_IMG_BASE_URL"]
+
 def get_movie_poster(title):
     try:
         url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
@@ -33,10 +33,35 @@ def get_movie_poster(title):
                 if poster_path:
                     return f"{TMDB_IMG_BASE_URL}{poster_path}"
         return "https://via.placeholder.com/300x450?text=No+Image"
-    except:
+    except Exception as e:
+        st.error(f"Error fetching poster: {e}")
         return "https://via.placeholder.com/300x450?text=No+Image"
 
-# ------------------- Authentication -------------------
+# ---------------- MongoDB Test ----------------
+try:
+    mongo_uri = st.secrets["MONGO"]["URI"]
+    client = MongoClient(mongo_uri)
+    db = client.get_database("movie_recommendation_system")
+    collections = db.list_collection_names()
+    st.success("✅ MongoDB connected!")
+    st.write("Collections:", collections)
+except Exception as e:
+    st.error(f"❌ MongoDB error: {e}")
+
+# ---------------- TMDb Test ----------------
+try:
+    api_key = st.secrets["TMDB"]["TMDB_API_KEY"]
+    tmdb_url = f"https://api.themoviedb.org/3/movie/550?api_key={api_key}"
+    response = requests.get(tmdb_url)
+    if response.status_code == 200:
+        st.success("✅ TMDb API working!")
+        st.json(response.json())
+    else:
+        st.error(f"❌ TMDb error: {response.status_code}")
+except Exception as e:
+    st.error(f"❌ TMDb API exception: {e}")
+
+# ---------------- MongoDB Authentication ----------------
 def check_user_credentials(email, password):
     user = users_collection.find_one({"email": email})
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
@@ -45,40 +70,53 @@ def check_user_credentials(email, password):
 
 def register_user(email, password):
     if users_collection.find_one({"email": email}):
-        return False
-    hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    users_collection.insert_one({"email": email, "password": hashed_pw})
+        return False  # Email already registered
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    users_collection.insert_one({"email": email, "password": hashed_password})
     return True
 
-# ------------------- Load Movie Data -------------------
+# ---------------- Load Movie Data ----------------
 @st.cache_resource
 def load_data():
-    file_path = "movie_dict_latest.pcl"
+    file_path = 'movie_dict_latest.pcl'
     if not os.path.exists(file_path):
-        return pd.DataFrame(), []
+        st.error(f"❌ The file {file_path} was not found!")
+        return pd.DataFrame(), []  # Return empty DataFrame and empty list if file is not found
 
-    with open(file_path, 'rb') as f:
-        data = pickle.load(f)
+    try:
+        with open(file_path, 'rb') as file:
+            data = pickle.load(file)
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
+        return pd.DataFrame(), []  # Return empty DataFrame and list if there's an error
+    
     if isinstance(data, dict):
         data = pd.DataFrame(data)
 
-    genre_columns = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary',
-                     'drama', 'family', 'fantasy', 'foreign', 'history', 'horror', 'music',
-                     'mystery', 'romance', 'science fiction', 'thriller', 'tv movie', 'war', 'western']
-    genre_columns = [g for g in genre_columns if g in data.columns]
-
-    data['genre_names'] = data[genre_columns].apply(lambda row: [g for g in genre_columns if row[g] == 1], axis=1)
-    data['combined_features'] = data[genre_columns].astype(str).agg(" ".join, axis=1) + " " + data['overview'].astype(str)
     data['popularity'] = pd.to_numeric(data.get('popularity', 0), errors='coerce')
     data.fillna(0, inplace=True)
+
+    genre_columns = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 
+                     'drama', 'family', 'fantasy', 'foreign', 'history', 'horror', 'music', 
+                     'mystery', 'romance', 'science fiction', 'thriller', 'tv movie', 'war', 'western']
+    genre_columns = [col for col in genre_columns if col in data.columns]
+
+    data['genre_names'] = data[genre_columns].apply(lambda row: [col for col in genre_columns if row[col] == 1], axis=1)
+    data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
     return data, genre_columns
 
 df, all_genres = load_data()
+if df.empty:
+    st.error("❌ Data is empty after loading!")
+else:
+    st.success("✅ Data loaded successfully!")
+    st.write(f"Data preview: {df.head()}")
+
 genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
-# ------------------- Similarity -------------------
+# ---------------- Build TF-IDF and Similarity Matrix ----------------
 @st.cache_resource
 def build_similarity(data):
     tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
@@ -88,125 +126,162 @@ def build_similarity(data):
 
 cosine_sim = build_similarity(df)
 
-# ------------------- Train RF Model -------------------
-def train_rf_model(data, genres):
-    features = ['release_year', 'popularity'] + genres
-    X = data[features]
-    y = data[genres]
-    model = RandomForestClassifier(n_estimators=100, max_depth=15, random_state=42)
-    model.fit(X, y)
-    return model
+# ---------------- Train Random Forest Model ----------------
+def train_rf_model(data, genre_columns):
+    data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
+    # Select Features & Labels for Classification Model
+    features = ['release_year', 'popularity'] + genre_columns
+    X = data[features]
+    y = data[genre_columns]
+
+    rf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=15,
+        min_samples_split=10,
+        random_state=42,
+        n_jobs=-1,
+        warm_start=True
+    )
+
+    rf.fit(X, y)
+    return rf
+
+# Train the RandomForest model
 rf_model = train_rf_model(df, all_genres)
 
-# ------------------- Recommend Movies -------------------
-def recommend_movies(title, data, similarity, model, genre_filter=None, n=20):
-    if 'title' not in data.columns or title not in data['title'].values:
+# ---------------- Recommendation Logic ----------------
+def recommend_movies(movie_title, data, similarity_matrix, rf_model, genre_filter=None, n_recommendations=20):
+    if 'title' not in data.columns or movie_title not in data['title'].values:
         return pd.DataFrame()
 
-    idx = data[data['title'] == title].index[0]
-    sim_scores = sorted(list(enumerate(similarity[idx])), key=lambda x: x[1], reverse=True)
+    idx = data[data['title'] == movie_title].index[0]
+    sim_scores = list(enumerate(similarity_matrix[idx]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
     movie_indices = [i[0] for i in sim_scores[1:]]
+
     similar_movies = data.iloc[movie_indices]
 
-    # Predict genres from input movie
+    # Predict genres using Random Forest
     input_features = data.loc[idx, ['release_year', 'popularity'] + all_genres].values.reshape(1, -1)
-    predicted = model.predict(input_features)[0]
-    pred_genres = [all_genres[i] for i, g in enumerate(predicted) if g == 1]
+    predicted_genres = rf_model.predict(input_features)[0]
+    predicted_genre_names = [all_genres[i] for i, val in enumerate(predicted_genres) if val == 1]
 
-    def overlap(g_list): return any(g in g_list for g in pred_genres)
-    filtered = similar_movies[similar_movies['genre_names'].apply(overlap)]
+    # Filter movies by predicted genre overlap
+    def genre_overlap(genres):
+        return any(g in genres for g in predicted_genre_names)
+
+    filtered_movies = similar_movies[similar_movies['genre_names'].apply(genre_overlap)]
 
     if genre_filter and genre_filter != "All":
-        filtered = filtered[filtered[genre_filter] == 1]
+        filtered_movies = filtered_movies[filtered_movies[genre_filter] == 1]
 
-    return filtered.head(n)
+    return filtered_movies.head(n_recommendations)
 
-# ------------------- Metrics -------------------
-def calculate_metrics(recommended_titles, ground_truth):
+# ---------------- Evaluation Metrics ----------------
+def calculate_metrics(recommended_titles, ground_truth_genres):
     y_true = np.zeros(len(all_genres))
     y_pred = np.zeros(len(all_genres))
 
-    for g in ground_truth:
-        if g in all_genres:
-            y_true[all_genres.index(g)] = 1
-    for t in recommended_titles:
-        genres = df[df['title'] == t]['genre_names'].values
-        if len(genres) > 0:
-            for g in genres[0]:
-                if g in all_genres:
-                    y_pred[all_genres.index(g)] = 1
+    for genre in ground_truth_genres:
+        if genre in all_genres:
+            y_true[all_genres.index(genre)] = 1
 
-    return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision": precision_score(y_true, y_pred, zero_division=0),
-        "f1": f1_score(y_true, y_pred, zero_division=0),
-        "confusion": confusion_matrix(y_true, y_pred)
-    }
+    for title in recommended_titles:
+        genres = df[df['title'] == title]['genre_names'].values
+        if genres.any():
+            for genre in genres[0]:
+                if genre in all_genres:
+                    y_pred[all_genres.index(genre)] = 1
 
-# ------------------- Pages -------------------
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    f1 = f1_score(y_true, y_pred, zero_division=0)
+    accuracy = accuracy_score(y_true, y_pred)
+    conf_matrix = confusion_matrix(y_true, y_pred)
+
+    return accuracy, precision, f1, conf_matrix
+
+# ---------------- Page Routing ----------------
 def login_page():
-    st.title("🔐 Login")
+    st.title("Login")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+
     if st.button("Login"):
         if check_user_credentials(email, password):
-            st.session_state.logged_in = True
-            st.session_state.email = email
-            st.session_state.page = "recommend"
+            st.session_state["logged_in"] = True
+            st.session_state["email"] = email
+            st.session_state.page = "recommendations"
         else:
-            st.error("❌ Invalid credentials!")
-    if st.button("No account? Register here"):
+            st.error("Invalid email or password!")
+
+    if st.button("Don't have an account? Register here"):
         st.session_state.page = "register"
 
 def register_page():
-    st.title("📝 Register")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    st.title("Register")
+    new_email = st.text_input("Email")
+    new_password = st.text_input("Password", type="password")
+
     if st.button("Register"):
-        if register_user(email, password):
-            st.success("Account created! Please login.")
-            st.session_state.page = "login"
+        if not register_user(new_email, new_password):
+            st.error("Email already registered!")
         else:
-            st.error("Email already registered.")
-    if st.button("Already have an account?"):
+            st.success("Registration successful! Please login.")
+            st.session_state.page = "login"
+
+    if st.button("Already have an account? Login here"):
         st.session_state.page = "login"
 
-def recommend_page():
-    st.title("🎬 Movie Recommender")
-    if "logged_in" not in st.session_state or not st.session_state.logged_in:
-        st.warning("Please log in first!")
+def recommendation_page():
+    st.title("Movie Recommendation")
+    if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
+        st.warning("Please log in to see recommendations!")
         st.session_state.page = "login"
         return
 
-    st.markdown(f"Welcome, **{st.session_state.email}**!")
+    st.write(f"Hello, {st.session_state['email']}! You're logged in.")
 
-    movie_choice = st.selectbox("Pick a Movie:", movie_options)
-    genre_choice = st.selectbox("Filter by Genre:", genre_options)
+    selected_movie = st.selectbox("Choose a Movie (Optional):", movie_options)
+    selected_genre = st.selectbox("Filter by Genre (Optional):", genre_options)
 
     if st.button("🎯 Recommend"):
-        if movie_choice != "None":
-            recs = recommend_movies(movie_choice, df, cosine_sim, rf_model, genre_choice)
+        if selected_movie != "None":
+            recs = recommend_movies(selected_movie, df, cosine_sim, rf_model, selected_genre if selected_genre != "All" else None)
         else:
-            recs = df[df[genre_choice.lower()] == 1] if genre_choice != "All" else df
+            recs = df.copy()
+            if selected_genre != "All":
+                recs = recs[recs[selected_genre.lower()] == 1]
             recs = recs.head(20)
 
         if recs.empty:
-            st.warning("No recommendations found.")
+            st.warning("😕 No recommendations found with the given filters.")
         else:
-            st.subheader("Results:")
-            cols = st.columns(5)
-            for i, (_, row) in enumerate(recs.iterrows()):
-                with cols[i % 5]:
-                    st.image(get_movie_poster(row['title']), use_column_width=True)
-                    st.markdown(f"**{row['title']}**")
-                    st.caption(", ".join(row['genre_names']))
+            st.subheader("🎬 You might enjoy:")
+            num_cols = 5
+            rows = (len(recs) + num_cols - 1) // num_cols
+
+            for row_idx in range(rows):
+                cols = st.columns(num_cols)
+                for col_idx in range(num_cols):
+                    rec_idx = row_idx * num_cols + col_idx
+                    if rec_idx < len(recs):
+                        movie_title = recs.iloc[rec_idx]['title']
+                        poster_url = get_movie_poster(movie_title)
+                        overview = recs.iloc[rec_idx]['overview']
+                        genre_list = recs.iloc[rec_idx]['genre_names']
+
+                        with cols[col_idx]:
+                            st.image(poster_url, caption=movie_title, use_container_width=True)
+                            st.markdown(f"**Genre:** {', '.join(genre_list)}")
+                            with st.expander("Show Overview"):
+                                st.markdown(f"**Overview:** {overview}")
 
     if st.button("Logout"):
-        st.session_state.clear()
-        st.success("Logged out.")
+        st.session_state["logged_in"] = False
+        st.session_state.page = "login"
 
-# ------------------- App Routing -------------------
+# ---------------- Main Logic ----------------
 if 'page' not in st.session_state:
     st.session_state.page = "login"
 
@@ -214,5 +289,5 @@ if st.session_state.page == "login":
     login_page()
 elif st.session_state.page == "register":
     register_page()
-elif st.session_state.page == "recommend":
-    recommend_page()
+elif st.session_state.page == "recommendations":
+    recommendation_page() update
