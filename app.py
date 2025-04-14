@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 from pymongo import MongoClient
 import bcrypt
 import joblib
+from sklearn.metrics import precision_score, f1_score, accuracy_score, confusion_matrix
 
 # ---------------- MongoDB Setup ----------------
 MONGO_URI = st.secrets["MONGO"]["URI"]
@@ -57,6 +58,7 @@ try:
         st.error(f"❌ TMDb error: {response.status_code}")
 except Exception as e:
     st.error(f"❌ TMDb API exception: {e}")
+
 # ---------------- MongoDB Authentication ----------------
 def check_user_credentials(email, password):
     user = users_collection.find_one({"email": email})
@@ -175,12 +177,11 @@ def calculate_metrics(recommended_titles, ground_truth_genres):
                     y_pred[all_genres.index(genre)] = 1
 
     precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
     accuracy = accuracy_score(y_true, y_pred)
     conf_matrix = confusion_matrix(y_true, y_pred)
 
-    return accuracy, precision, recall, f1, conf_matrix
+    return accuracy, precision, f1, conf_matrix
 
 # ---------------- Page Routing ----------------
 def login_page():
@@ -272,5 +273,3 @@ elif st.session_state.page == "register":
     register_page()
 elif st.session_state.page == "recommendations":
     recommendation_page()
-
-
