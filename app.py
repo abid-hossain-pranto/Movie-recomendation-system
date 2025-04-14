@@ -273,10 +273,4 @@ elif st.session_state.page == "register":
 elif st.session_state.page == "recommendations":
     recommendation_page()
 
-st.markdown("---")
-st.caption("Created by MD Abid")
-st.caption("🚀 *Powered by TMDb API, TF-IDF & Random forest with cosine similarity in Streamlit*")
 
-st.markdown("---")
-st.caption("Created by MD Abid")
-st.caption("🚀 *Powered by TMDb API, TF-IDF & Random forest with cosine similarity in Streamlit*")
