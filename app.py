@@ -4,12 +4,9 @@ import pandas as pd
 import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, confusion_matrix
-import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 from pymongo import MongoClient
 import bcrypt
-from sklearn.ensemble import RandomForestClassifier
 import joblib
 
 # ---------------- MongoDB Setup ----------------
@@ -52,32 +49,34 @@ def register_user(email, password):
     return True
 
 # ---------------- Load Movie Data ----------------
-# Removed @st.cache_data because it could cause issues with non-hashable data (like lists in genre_names)
 def load_data():
-    with open('movie_dict_latest.pcl', 'rb') as file:
-        data = pickle.load(file)
-    if isinstance(data, dict):
-        data = pd.DataFrame(data)
+    try:
+        with open('movie_dict_latest.pcl', 'rb') as file:
+            data = pickle.load(file)
+        if isinstance(data, dict):
+            data = pd.DataFrame(data)
 
-    data['popularity'] = pd.to_numeric(data.get('popularity', 0), errors='coerce')
-    data.fillna(0, inplace=True)
+        data['popularity'] = pd.to_numeric(data.get('popularity', 0), errors='coerce')
+        data.fillna(0, inplace=True)
 
-    genre_columns = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 
-                     'drama', 'family', 'fantasy', 'foreign', 'history', 'horror', 'music', 
-                     'mystery', 'romance', 'science fiction', 'thriller', 'tv movie', 'war', 'western']
-    genre_columns = [col for col in genre_columns if col in data.columns]
+        genre_columns = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 
+                         'drama', 'family', 'fantasy', 'foreign', 'history', 'horror', 'music', 
+                         'mystery', 'romance', 'science fiction', 'thriller', 'tv movie', 'war', 'western']
+        genre_columns = [col for col in genre_columns if col in data.columns]
 
-    data['genre_names'] = data[genre_columns].apply(lambda row: [col for col in genre_columns if row[col] == 1], axis=1)
-    data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
+        data['genre_names'] = data[genre_columns].apply(lambda row: [col for col in genre_columns if row[col] == 1], axis=1)
+        data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
-    return data, genre_columns
+        return data, genre_columns
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(), []
 
 df, all_genres = load_data()
 genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
 # ---------------- Build TF-IDF and Similarity Matrix ----------------
-# Removed @st.cache_data because it contains complex objects (like lists)
 def build_similarity(data):
     tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
     tfidf_matrix = tfidf.fit_transform(data['combined_features'])
@@ -87,81 +86,61 @@ def build_similarity(data):
 cosine_sim = build_similarity(df)
 
 # ---------------- Train Random Forest Model ----------------
-# Removed @st.cache_resource because it could cause issues with non-hashable data (like lists)
 def train_rf_model(data, genre_columns):
-    data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
+    try:
+        data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
-    # Select Features & Labels for Classification Model
-    features = ['release_year', 'popularity'] + genre_columns
-    X = data[features]
-    y = data[genre_columns]
+        features = ['release_year', 'popularity'] + genre_columns
+        X = data[features]
+        y = data[genre_columns]
 
-    rf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=15,
-        min_samples_split=10,
-        random_state=42,
-        n_jobs=-1,
-        warm_start=True
-    )
+        rf = RandomForestClassifier(
+            n_estimators=100,
+            max_depth=15,
+            min_samples_split=10,
+            random_state=42,
+            n_jobs=-1,
+            warm_start=True
+        )
 
-    rf.fit(X, y)
-    return rf
+        rf.fit(X, y)
+        return rf
+    except Exception as e:
+        st.error(f"Error training Random Forest model: {e}")
+        return None
 
 # Train the RandomForest model
 rf_model = train_rf_model(df, all_genres)
 
 # ---------------- Recommendation Logic ----------------
 def recommend_movies(movie_title, data, similarity_matrix, rf_model, genre_filter=None, n_recommendations=20):
-    if 'title' not in data.columns or movie_title not in data['title'].values:
+    try:
+        if 'title' not in data.columns or movie_title not in data['title'].values:
+            return pd.DataFrame()
+
+        idx = data[data['title'] == movie_title].index[0]
+        sim_scores = list(enumerate(similarity_matrix[idx]))
+        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+        movie_indices = [i[0] for i in sim_scores[1:]]
+
+        similar_movies = data.iloc[movie_indices]
+
+        input_features = data.loc[idx, ['release_year', 'popularity'] + all_genres].values.reshape(1, -1)
+        predicted_genres = rf_model.predict(input_features)[0]
+        predicted_genre_names = [all_genres[i] for i, val in enumerate(predicted_genres) if val == 1]
+
+        def genre_overlap(genres):
+            return any(g in genres for g in predicted_genre_names)
+
+        filtered_movies = similar_movies[similar_movies['genre_names'].apply(genre_overlap)]
+
+        if genre_filter and genre_filter != "All":
+            filtered_movies = filtered_movies[filtered_movies[genre_filter] == 1]
+
+        return filtered_movies.head(n_recommendations)
+    except Exception as e:
+        st.error(f"Error generating recommendations: {e}")
         return pd.DataFrame()
-
-    idx = data[data['title'] == movie_title].index[0]
-    sim_scores = list(enumerate(similarity_matrix[idx]))
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-    movie_indices = [i[0] for i in sim_scores[1:]]
-
-    similar_movies = data.iloc[movie_indices]
-
-    # Predict genres using Random Forest
-    input_features = data.loc[idx, ['release_year', 'popularity'] + all_genres].values.reshape(1, -1)
-    predicted_genres = rf_model.predict(input_features)[0]
-    predicted_genre_names = [all_genres[i] for i, val in enumerate(predicted_genres) if val == 1]
-
-    # Filter movies by predicted genre overlap
-    def genre_overlap(genres):
-        return any(g in genres for g in predicted_genre_names)
-
-    filtered_movies = similar_movies[similar_movies['genre_names'].apply(genre_overlap)]
-
-    if genre_filter and genre_filter != "All":
-        filtered_movies = filtered_movies[filtered_movies[genre_filter] == 1]
-
-    return filtered_movies.head(n_recommendations)
-
-# ---------------- Evaluation Metrics ----------------
-def calculate_metrics(recommended_titles, ground_truth_genres):
-    y_true = np.zeros(len(all_genres))
-    y_pred = np.zeros(len(all_genres))
-
-    for genre in ground_truth_genres:
-        if genre in all_genres:
-            y_true[all_genres.index(genre)] = 1
-
-    for title in recommended_titles:
-        genres = df[df['title'] == title]['genre_names'].values
-        if genres.any():
-            for genre in genres[0]:
-                if genre in all_genres:
-                    y_pred[all_genres.index(genre)] = 1
-
-    precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    accuracy = accuracy_score(y_true, y_pred)
-    conf_matrix = confusion_matrix(y_true, y_pred)
-
-    return accuracy, precision, recall, f1, conf_matrix
 
 # ---------------- Page Routing ----------------
 def login_page():
