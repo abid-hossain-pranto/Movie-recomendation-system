@@ -9,6 +9,8 @@ from pymongo import MongoClient
 import bcrypt
 import joblib
 from sklearn.metrics import precision_score, f1_score, accuracy_score, confusion_matrix
+import os
+import numpy as np
 
 # ---------------- MongoDB Setup ----------------
 MONGO_URI = st.secrets["MONGO"]["URI"]
@@ -35,7 +37,7 @@ def get_movie_poster(title):
         st.error(f"Error fetching poster: {e}")
         return "https://via.placeholder.com/300x450?text=No+Image"
 
-# MongoDB Test
+# ---------------- MongoDB Test ----------------
 try:
     mongo_uri = st.secrets["MONGO"]["URI"]
     client = MongoClient(mongo_uri)
@@ -46,7 +48,7 @@ try:
 except Exception as e:
     st.error(f"❌ MongoDB error: {e}")
 
-# TMDb Test
+# ---------------- TMDb Test ----------------
 try:
     api_key = st.secrets["TMDB"]["TMDB_API_KEY"]
     tmdb_url = f"https://api.themoviedb.org/3/movie/550?api_key={api_key}"
@@ -76,8 +78,18 @@ def register_user(email, password):
 # ---------------- Load Movie Data ----------------
 @st.cache_resource
 def load_data():
-    with open('movie_dict_latest.pcl', 'rb') as file:
-        data = pickle.load(file)
+    file_path = 'movie_dict_latest.pcl'
+    if not os.path.exists(file_path):
+        st.error(f"❌ The file {file_path} was not found!")
+        return pd.DataFrame(), []  # Return empty DataFrame and empty list if file is not found
+
+    try:
+        with open(file_path, 'rb') as file:
+            data = pickle.load(file)
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
+        return pd.DataFrame(), []  # Return empty DataFrame and list if there's an error
+    
     if isinstance(data, dict):
         data = pd.DataFrame(data)
 
@@ -95,6 +107,12 @@ def load_data():
     return data, genre_columns
 
 df, all_genres = load_data()
+if df.empty:
+    st.error("❌ Data is empty after loading!")
+else:
+    st.success("✅ Data loaded successfully!")
+    st.write(f"Data preview: {df.head()}")
+
 genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
