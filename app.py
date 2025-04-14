@@ -52,7 +52,7 @@ def register_user(email, password):
     return True
 
 # ---------------- Load Movie Data ----------------
-@st.cache_data  # Use this for caching data or any loaded resources
+# Removed @st.cache_data because it could cause issues with non-hashable data (like lists in genre_names)
 def load_data():
     with open('movie_dict_latest.pcl', 'rb') as file:
         data = pickle.load(file)
@@ -77,7 +77,7 @@ genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
 # ---------------- Build TF-IDF and Similarity Matrix ----------------
-@st.cache_data  # Cache this matrix for faster access
+# Removed @st.cache_data because it contains complex objects (like lists)
 def build_similarity(data):
     tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
     tfidf_matrix = tfidf.fit_transform(data['combined_features'])
@@ -87,7 +87,7 @@ def build_similarity(data):
 cosine_sim = build_similarity(df)
 
 # ---------------- Train Random Forest Model ----------------
-@st.cache_resource  # Cache the trained model
+# Removed @st.cache_resource because it could cause issues with non-hashable data (like lists)
 def train_rf_model(data, genre_columns):
     data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
