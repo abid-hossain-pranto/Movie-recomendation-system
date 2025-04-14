@@ -62,10 +62,7 @@ def load_data():
                      'mystery', 'romance', 'science fiction', 'thriller', 'tv movie', 'war', 'western']
     genre_columns = [col for col in genre_columns if col in data.columns]
 
-    data['genre_names'] = data[genre_columns].apply(
-        lambda row: [col for col in genre_columns if row.get(col, 0) == 1], axis=1
-    )
-    
+    data['genre_names'] = data[genre_columns].apply(lambda row: [col for col in genre_columns if row[col] == 1], axis=1)
     data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
     return data, genre_columns
