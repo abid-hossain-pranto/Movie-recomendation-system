@@ -34,6 +34,29 @@ def get_movie_poster(title):
         st.error(f"Error fetching poster: {e}")
         return "https://via.placeholder.com/300x450?text=No+Image"
 
+# MongoDB Test
+try:
+    mongo_uri = st.secrets["MONGO"]["URI"]
+    client = MongoClient(mongo_uri)
+    db = client.get_database("movie_recommendation_system")
+    collections = db.list_collection_names()
+    st.success("✅ MongoDB connected!")
+    st.write("Collections:", collections)
+except Exception as e:
+    st.error(f"❌ MongoDB error: {e}")
+
+# TMDb Test
+try:
+    api_key = st.secrets["TMDB"]["TMDB_API_KEY"]
+    tmdb_url = f"https://api.themoviedb.org/3/movie/550?api_key={api_key}"
+    response = requests.get(tmdb_url)
+    if response.status_code == 200:
+        st.success("✅ TMDb API working!")
+        st.json(response.json())
+    else:
+        st.error(f"❌ TMDb error: {response.status_code}")
+except Exception as e:
+    st.error(f"❌ TMDb API exception: {e}")
 # ---------------- MongoDB Authentication ----------------
 def check_user_credentials(email, password):
     user = users_collection.find_one({"email": email})
