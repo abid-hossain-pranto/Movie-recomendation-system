@@ -10,6 +10,7 @@ import numpy as np
 from pymongo import MongoClient
 import bcrypt
 from sklearn.ensemble import RandomForestClassifier
+import joblib
 
 # ---------------- MongoDB Setup ----------------
 MONGO_URI = st.secrets["MONGO"]["URI"]
@@ -22,15 +23,19 @@ TMDB_API_KEY = st.secrets["TMDB"]["TMDB_API_KEY"]
 TMDB_IMG_BASE_URL = st.secrets["TMDB"]["TMDB_IMG_BASE_URL"]
 
 def get_movie_poster(title):
-    url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        results = response.json().get("results")
-        if results:
-            poster_path = results[0].get("poster_path")
-            if poster_path:
-                return f"{TMDB_IMG_BASE_URL}{poster_path}"
-    return "https://via.placeholder.com/300x450?text=No+Image"
+    try:
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            results = response.json().get("results")
+            if results:
+                poster_path = results[0].get("poster_path")
+                if poster_path:
+                    return f"{TMDB_IMG_BASE_URL}{poster_path}"
+        return "https://via.placeholder.com/300x450?text=No+Image"
+    except Exception as e:
+        st.error(f"Error fetching poster: {e}")
+        return "https://via.placeholder.com/300x450?text=No+Image"
 
 # ---------------- MongoDB Authentication ----------------
 def check_user_credentials(email, password):
@@ -47,7 +52,7 @@ def register_user(email, password):
     return True
 
 # ---------------- Load Movie Data ----------------
-@st.cache_resource
+@st.cache_data  # Use this for caching data or any loaded resources
 def load_data():
     with open('movie_dict_latest.pcl', 'rb') as file:
         data = pickle.load(file)
@@ -72,7 +77,7 @@ genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
 # ---------------- Build TF-IDF and Similarity Matrix ----------------
-@st.cache_resource
+@st.cache_data  # Cache this matrix for faster access
 def build_similarity(data):
     tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
     tfidf_matrix = tfidf.fit_transform(data['combined_features'])
@@ -82,6 +87,7 @@ def build_similarity(data):
 cosine_sim = build_similarity(df)
 
 # ---------------- Train Random Forest Model ----------------
+@st.cache_resource  # Cache the trained model
 def train_rf_model(data, genre_columns):
     data['combined_features'] = data[genre_columns].astype(str).agg(' '.join, axis=1) + " " + data['overview'].astype(str)
 
