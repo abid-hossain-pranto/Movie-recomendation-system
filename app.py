@@ -98,6 +98,15 @@ def load_data():
 df, all_genres = load_data()
 genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
+# Debugging: Check if data loaded successfully
+st.subheader("📊 Data Load Test")
+if not df.empty:
+    st.success(f"Data loaded! {df.shape[0]} movies, {df.shape[1]} columns")
+    st.write(df.head())
+    st.write("Genres found:", all_genres)
+else:
+    st.error("Failed to load movie data.")
+
 
 # ---------------- Build TF-IDF and Similarity Matrix ----------------
 def build_similarity(data):
