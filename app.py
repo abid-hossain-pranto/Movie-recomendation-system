@@ -78,18 +78,8 @@ def register_user(email, password):
 # ---------------- Load Movie Data ----------------
 @st.cache_resource
 def load_data():
-    file_path = 'movie_dict_latest.pcl'
-    if not os.path.exists(file_path):
-        st.error(f"❌ The file {file_path} was not found!")
-        return pd.DataFrame(), []  # Return empty DataFrame and empty list if file is not found
-
-    try:
-        with open(file_path, 'rb') as file:
-            data = pickle.load(file)
-    except Exception as e:
-        st.error(f"❌ Error loading data: {e}")
-        return pd.DataFrame(), []  # Return empty DataFrame and list if there's an error
-    
+    with open('movie_dict_latest.pcl', 'rb') as file:
+        data = pickle.load(file)
     if isinstance(data, dict):
         data = pd.DataFrame(data)
 
@@ -107,12 +97,6 @@ def load_data():
     return data, genre_columns
 
 df, all_genres = load_data()
-if df.empty:
-    st.error("❌ Data is empty after loading!")
-else:
-    st.success("✅ Data loaded successfully!")
-    st.write(f"Data preview: {df.head()}")
-
 genre_options = ["All"] + sorted(all_genres)
 movie_options = ["None"] + sorted(df['title'].unique().tolist())
 
@@ -195,11 +179,12 @@ def calculate_metrics(recommended_titles, ground_truth_genres):
                     y_pred[all_genres.index(genre)] = 1
 
     precision = precision_score(y_true, y_pred, zero_division=0)
+    recall = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
     accuracy = accuracy_score(y_true, y_pred)
     conf_matrix = confusion_matrix(y_true, y_pred)
 
-    return accuracy, precision, f1, conf_matrix
+    return accuracy, precision, recall, f1, conf_matrix
 
 # ---------------- Page Routing ----------------
 def login_page():
@@ -290,4 +275,8 @@ if st.session_state.page == "login":
 elif st.session_state.page == "register":
     register_page()
 elif st.session_state.page == "recommendations":
-    recommendation_page() update
+    recommendation_page()
+
+st.markdown("---")
+st.caption("Created by MD Abid")
+st.caption("🚀 *Powered by TMDb API, TF-IDF & Random forest with cosine similarity in Streamlit*")
