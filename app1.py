@@ -126,29 +126,7 @@ def recommend_movies(movie_title, data, similarity_matrix, rf_model, genre_filte
 
     return filtered_movies.head(n_recommendations)
 
-# ---------------- Evaluation Metrics ----------------
-def calculate_metrics(recommended_titles, ground_truth_genres):
-    y_true = np.zeros(len(all_genres))
-    y_pred = np.zeros(len(all_genres))
 
-    for genre in ground_truth_genres:
-        if genre in all_genres:
-            y_true[all_genres.index(genre)] = 1
-
-    for title in recommended_titles:
-        genres = df[df['title'] == title]['genre_names'].values
-        if genres.any():
-            for genre in genres[0]:
-                if genre in all_genres:
-                    y_pred[all_genres.index(genre)] = 1
-
-    precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    accuracy = accuracy_score(y_true, y_pred)
-    conf_matrix = confusion_matrix(y_true, y_pred)
-
-    return accuracy, precision, recall, f1, conf_matrix
 
 # ---------------- Page Routing ----------------
 def login_page():
@@ -250,4 +228,4 @@ elif st.session_state.page == "recommendations":
 
 st.markdown("---")
 st.caption("Created by MD Abid")
-st.caption("*Powered by TMDb API, TF-IDF, and Random Forest with cosine similarity in Streamlit*")
+
